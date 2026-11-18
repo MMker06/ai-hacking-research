@@ -1,0 +1,95 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  AI 해킹 연구 — 격리 실습 환경 (재구성본 / RECONSTRUCTION)
+# ─────────────────────────────────────────────────────────────────────────────
+#  ⚠️ 이 파일은 2025~2026 연구 당시 사용한 "원본" compose 파일이 아닙니다.
+#     원본은 남아 있지 않아, 실행 화면에 기록된 아래 흔적을 근거로 재구성했습니다.
+#
+#       docker exec -it webapp sqlmap --url http://testphp.vulnweb.com/listproducts.php?cat=1 --batch
+#       docker-compose up -d
+#       Live Stats → Model: ollama/dolphin-llama3
+#
+#     - 공격 도구 컨테이너 이름이 `webapp` 이었다는 점
+#     - 모델을 Ollama 로컬에서 구동했다는 점 (Cost: $0.0000)
+#     - sqlmap / nmap 을 컨테이너 안에서 호출했다는 점
+#     이 세 가지를 그대로 맞췄습니다.
+#
+#  ⚠️ 법적 고지
+#     이 환경으로 스캔해도 되는 대상은 두 가지뿐입니다.
+#       1) 아래 `target` 서비스 — 내 컴퓨터 안에서 돌아가는 내 타깃
+#       2) 벤더가 공개한 합법 테스트 사이트 (예: testphp.vulnweb.com — Acunetix 제공)
+#     허락받지 않은 제3자 시스템을 대상으로 쓰면 정보통신망법 위반입니다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: ai-hacking-lab
+
+services:
+
+  # ── 검열 해제 LLM 런타임 ─────────────────────────────────────────────────
+  # 모델은 전부 로컬에서 돌아갑니다. 외부 API 키가 필요 없고, 비용도 발생하지 않습니다.
+  # 기동 후:  docker exec -it ollama ollama pull dolphin-llama3
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "127.0.0.1:11434:11434"   # 로컬에만 바인딩. 외부에 열지 말 것.
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - lab
+    restart: unless-stopped
+
+  # ── 공격 도구 컨테이너 ──────────────────────────────────────────────────
+  # 에이전트가 `docker exec -it webapp sqlmap ...` 형태로 호출하던 컨테이너.
+  # 이름을 바꾸면 당시 실행 흔적과 맞지 않으므로 `webapp` 그대로 둡니다.
+  #
+  # ⚠️ 재현 시 주의: `-it` 는 TTY가 없는 환경(에이전트가 subprocess로 호출하는 경우)에서
+  #    "the input device is not a TTY" 로 실패합니다. 반드시 `-i` 만 쓰세요.
+  #      ✅ docker exec -i webapp sqlmap --url <TARGET> --batch
+  #      ❌ docker exec -it webapp sqlmap --url <TARGET> --batch
+  webapp:
+    image: kalilinux/kali-rolling:latest
+    container_name: webapp
+    command: >
+      bash -c "apt-get update &&
+               apt-get install -y --no-install-recommends sqlmap nmap curl ca-certificates &&
+               echo '[lab] sqlmap / nmap ready' &&
+               sleep infinity"
+    volumes:
+      - ./out:/out          # 도구 원본 출력은 반드시 호스트로 떨어뜨릴 것 (아래 메모 참고)
+    networks:
+      - lab
+    restart: unless-stopped
+
+  # ── 로컬 공격 대상 ─────────────────────────────────────────────────────
+  # 외부 사이트를 건드리지 않고도 실습할 수 있도록 자체 호스팅 타깃을 둡니다.
+  # http://localhost:3000 으로 접속됩니다.
+  target:
+    image: bkimminich/juice-shop:latest
+    container_name: target
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - lab
+    restart: unless-stopped
+
+networks:
+  lab:
+    driver: bridge
+
+volumes:
+  ollama-models:
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  ★ 이 연구에서 배운 것을 환경에 반영한 부분
+#
+#  에이전트가 "SQL Injection 성공"이라고 보고했지만 실제 도구 호출은 0회였습니다.
+#  (근거: findings/hallucinated-logs.md)
+#  그래서 재현 환경에는 `./out` 볼륨을 뒀습니다.
+#  도구를 돌릴 때는 출력을 반드시 파일로 남기고, 에이전트의 보고와 대조하세요.
+#
+#      docker exec -i webapp sh -c \
+#        "sqlmap --url http://target:3000/rest/products/search?q=1 --batch \
+#         | tee /out/sqlmap_$(date +%F_%H%M%S).log"
+#
+#  /out 에 로그가 없으면, 에이전트가 뭐라고 보고하든 그건 실행된 적이 없는 공격입니다.
+# ─────────────────────────────────────────────────────────────────────────────

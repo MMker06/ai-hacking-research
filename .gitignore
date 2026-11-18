@@ -1,0 +1,36 @@
+# 실습 산출물 (도구 원본 출력 — 공개하지 않음)
+lab/out/
+*.log
+*.pcap
+
+# 원본 보고서 / 개인정보 포함 문서
+*.hwp
+*.hwpx
+*.pptx
+*.docx
+
+# 모델 / 대용량 가중치
+*.gguf
+*.bin
+*.safetensors
+models/
+
+# 환경 변수 · 키
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
